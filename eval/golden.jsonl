@@ -1,0 +1,5 @@
+{"repo": "https://github.com/psf/requests", "question": "What function do I call to send a GET request, and which file defines it?", "expect": ["requests/api.py", "def get"]}
+{"repo": "https://github.com/psf/requests", "question": "What exception is raised for an HTTP error status when I call raise_for_status?", "expect": ["HTTPError"]}
+{"repo": "https://github.com/psf/requests", "question": "Where is the default User-Agent header built?", "expect": ["requests/utils.py", "default_user_agent"]}
+{"repo": "https://github.com/psf/requests", "question": "How does a Session persist cookies across requests?", "expect": ["requests/sessions.py", "cookies"]}
+{"repo": "https://github.com/psf/requests", "question": "Does this repo contain a Rust implementation of HTTP/3?", "expect": ["not", "no"]}

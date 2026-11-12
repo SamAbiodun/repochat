@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>repochat</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#2a2f3a; --text:#e6e8ee; --muted:#8b93a7; --accent:#7c9cff; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 24px 16px 120px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); margin: 0 0 20px; }
+  form { display:flex; gap:8px; }
+  input { flex:1; background:var(--panel); border:1px solid var(--line); color:var(--text); padding:10px 12px; border-radius:8px; font-size:15px; }
+  button { background:var(--accent); color:#0b0d12; border:0; padding:10px 16px; border-radius:8px; font-weight:600; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:default; }
+  #status { color: var(--muted); margin: 10px 0 20px; min-height: 1.5em; }
+  .msg { padding: 12px 14px; border-radius: 10px; margin: 10px 0; white-space: pre-wrap; word-break: break-word; }
+  .user { background: #1f2533; }
+  .bot { background: var(--panel); border: 1px solid var(--line); }
+  .tool { color: var(--muted); font-size: 13px; margin: 4px 0 4px 14px; }
+  code { background:#0b0d12; padding:1px 5px; border-radius:4px; font-size:13px; }
+  #ask { position: fixed; left:0; right:0; bottom:0; background: var(--bg); border-top: 1px solid var(--line); padding: 12px 16px; }
+  #ask form { max-width: 860px; margin: 0 auto; }
+</style>
+</head>
+<body>
+<main>
+  <h1>repochat</h1>
+  <p class="sub">Paste a public GitHub repo. Ask it anything. Answers cite file and line.</p>
+  <form id="repoForm">
+    <input id="url" placeholder="https://github.com/owner/repo" required>
+    <button id="indexBtn">Index</button>
+  </form>
+  <div id="status"></div>
+  <div id="chat"></div>
+</main>
+<div id="ask">
+  <form id="askForm">
+    <input id="q" placeholder="Ask about the code…" disabled>
+    <button id="askBtn" disabled>Ask</button>
+  </form>
+</div>
+<script>
+const $ = id => document.getElementById(id);
+let repo = null, history = [];
+
+$('repoForm').onsubmit = async e => {
+  e.preventDefault();
+  $('indexBtn').disabled = true;
+  $('status').textContent = 'Starting…';
+  const r = await fetch('/repos', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({url: $('url').value})});
+  if (!r.ok) { $('status').textContent = (await r.json()).detail; $('indexBtn').disabled = false; return; }
+  const job = await r.json();
+  repo = job.repo;
+  poll();
+};
+
+async function poll() {
+  const r = await fetch('/repos/' + repo);
+  const j = await r.json();
+  if (j.status === 'ready') {
+    $('status').textContent = `Ready: ${repo} (${j.files || '?'} files, ${j.chunks || '?'} chunks)`;
+    $('q').disabled = $('askBtn').disabled = false; $('indexBtn').disabled = false; $('q').focus();
+    history = []; $('chat').innerHTML = '';
+  } else if (j.status === 'failed') {
+    $('status').textContent = 'Failed: ' + j.error; $('indexBtn').disabled = false;
+  } else {
+    $('status').textContent = `${j.status}… ${j.files ? j.files + ' files, ' : ''}${j.chunks || 0} chunks`;
+    setTimeout(poll, 1500);
+  }
+}
+
+function add(cls, text) { const d = document.createElement('div'); d.className = cls; d.textContent = text; $('chat').appendChild(d); window.scrollTo(0, document.body.scrollHeight); return d; }
+
+$('askForm').onsubmit = async e => {
+  e.preventDefault();
+  const q = $('q').value.trim(); if (!q) return;
+  $('q').value = ''; $('askBtn').disabled = true;
+  add('msg user', q); history.push({role:'user', content:q});
+  const bot = add('msg bot', '');
+  const r = await fetch('/chat', {method:'POST', headers:{'content-type':'application/json'}, body: JSON.stringify({repo, messages: history})});
+  if (!r.ok) { bot.textContent = 'Error: ' + (await r.json()).detail; $('askBtn').disabled = false; return; }
+  const reader = r.body.getReader(); const dec = new TextDecoder(); let buf = '', answer = '';
+  while (true) {
+    const {value, done} = await reader.read(); if (done) break;
+    buf += dec.decode(value, {stream:true});
+    const parts = buf.split('\n\n'); buf = parts.pop();
+    for (const p of parts) {
+      const ev = /^event: (.*)$/m.exec(p)?.[1]; const data = /^data: (.*)$/m.exec(p)?.[1];
+      if (ev === 'token') { answer += JSON.parse(data); bot.textContent = answer; }
+      else if (ev === 'tool') { const t = JSON.parse(data); const d = document.createElement('div'); d.className='tool'; d.textContent = `→ ${t.name}(${JSON.stringify(t.input)})`; $('chat').insertBefore(d, bot); }
+      window.scrollTo(0, document.body.scrollHeight);
+    }
+  }
+  history.push({role:'assistant', content: answer}); $('askBtn').disabled = false; $('q').focus();
+};
+</script>
+</body>
+</html>
