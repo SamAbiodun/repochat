@@ -199,8 +199,11 @@ def index_repo(repo: str) -> Job:
 
 async def start_index(repo: str) -> Job:
     existing = JOBS.get(repo)
-    if existing and existing.status in {"queued", "cloning", "indexing"}:
+    if existing and existing.status in {"queued", "cloning", "indexing", "ready"}:
         return existing
+    if search.repo_indexed(repo):
+        JOBS[repo] = Job(repo=repo, status="ready")
+        return JOBS[repo]
     JOBS[repo] = Job(repo=repo)
     asyncio.get_running_loop().run_in_executor(None, index_repo, repo)
     return JOBS[repo]
