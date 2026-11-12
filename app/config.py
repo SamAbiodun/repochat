@@ -15,6 +15,11 @@ class Settings(BaseSettings):
     azure_search_api_key: str
     max_repo_bytes: int = 4_000_000
     embed_dimensions: int = 1536
+    github_client_id: str = ""
+    github_client_secret: str = ""
+    session_secret: str = "dev-only-change-me"
+    cosmos_endpoint: str = ""
+    cosmos_key: str = ""
 
 
 @lru_cache

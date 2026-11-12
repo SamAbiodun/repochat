@@ -1,8 +1,9 @@
 import json
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from langchain_core.messages import AIMessage, HumanMessage
@@ -10,7 +11,7 @@ from langgraph.errors import GraphRecursionError
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-from app import ingest, search
+from app import auth, ingest, search, store
 from app.agent import build_graph
 
 STATIC = Path(__file__).resolve().parent.parent / "static"
@@ -24,6 +25,8 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="repochat", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
+app.include_router(auth.router)
+User = Annotated[dict, Depends(auth.require_user)]
 
 
 class IndexRequest(BaseModel):
@@ -37,6 +40,12 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     repo: str
+    messages: list[ChatMessage] = Field(min_length=1)
+
+
+class SessionBody(BaseModel):
+    repo: str
+    title: str
     messages: list[ChatMessage] = Field(min_length=1)
 
 
@@ -119,3 +128,33 @@ async def chat(body: ChatRequest):
         yield {"event": "done", "data": "{}"}
 
     return EventSourceResponse(events())
+
+
+@app.get("/sessions")
+def sessions_list(user: User):
+    return store.list_sessions(user["id"])
+
+
+@app.get("/sessions/{session_id}")
+def sessions_get(session_id: str, user: User):
+    doc = store.get_session(user["id"], session_id)
+    if not doc:
+        raise HTTPException(404, "no such session")
+    return doc
+
+
+@app.put("/sessions/{session_id}")
+async def sessions_put(session_id: str, request: Request, body: SessionBody, user: User):
+    if len(await request.body()) > store.MAX_SESSION_BYTES:
+        raise HTTPException(413, "session too large")
+    if not session_id.isalnum() or len(session_id) > 32:
+        raise HTTPException(400, "bad session id")
+    return store.put_session(
+        user["id"], session_id, body.repo, body.title, [m.model_dump() for m in body.messages]
+    )
+
+
+@app.delete("/sessions/{session_id}")
+def sessions_delete(session_id: str, user: User):
+    store.delete_session(user["id"], session_id)
+    return {"ok": True}

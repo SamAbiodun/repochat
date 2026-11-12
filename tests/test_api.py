@@ -27,3 +27,35 @@ def test_index_and_status(monkeypatch):
             ).status_code
             == 409
         )
+
+
+def test_sessions_require_sign_in(monkeypatch):
+    monkeypatch.setattr(search, "ensure_indexes", lambda: None)
+    with TestClient(main.app) as c:
+        assert c.get("/auth/me").json()["user"] is None
+        assert c.get("/sessions").status_code == 401
+        assert (
+            c.put("/sessions/abc", json={"repo": "x/y", "title": "t", "messages": []}).status_code
+            == 401
+        )
+
+
+def test_sessions_round_trip(monkeypatch):
+    monkeypatch.setattr(search, "ensure_indexes", lambda: None)
+    user = {"id": "1", "login": "sam", "avatar": ""}
+    monkeypatch.setattr(main.auth, "current_user", lambda request: user)
+    docs: dict[str, dict] = {}
+    monkeypatch.setattr(
+        main.store,
+        "put_session",
+        lambda u, i, r, t, m: docs.setdefault(i, {"id": i, "repo": r, "title": t, "updated": 1}),
+    )
+    monkeypatch.setattr(main.store, "list_sessions", lambda u: list(docs.values()))
+    monkeypatch.setattr(main.store, "delete_session", lambda u, i: docs.pop(i, None))
+    with TestClient(main.app) as c:
+        body = {"repo": "x/y", "title": "t", "messages": [{"role": "user", "content": "hi"}]}
+        assert c.put("/sessions/abc", json=body).status_code == 200
+        assert c.put("/sessions/bad id!", json=body).status_code == 400
+        assert [s["id"] for s in c.get("/sessions").json()] == ["abc"]
+        assert c.delete("/sessions/abc").json() == {"ok": True}
+        assert c.get("/sessions").json() == []

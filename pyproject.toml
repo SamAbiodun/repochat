@@ -14,6 +14,9 @@ dependencies = [
     "langgraph>=0.2",
     "azure-search-documents>=11.5",
     "azure-core>=1.30",
+    "itsdangerous>=2.2.0",
+    "azure-cosmos>=4.17.1",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]

@@ -41,3 +41,7 @@ Every push to `main` runs lint and tests, builds the image, pushes it to GHCR, a
 ## Limits
 
 Public repos only. Repos over the text budget are indexed partially and the skipped files are listed in the job status. The free Azure AI Search tier holds about 50 MB, so a handful of repos at a time.
+
+## Sign-in and saved sessions
+
+Sessions save in the browser by default. Signing in with GitHub (OAuth, user identity only) moves them to Cosmos DB so they follow you across devices. Routes: `/auth/login`, `/auth/callback`, `/auth/me`, `/auth/logout`, and `GET/PUT/DELETE /sessions`. Needs `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `SESSION_SECRET`, `COSMOS_ENDPOINT`, `COSMOS_KEY`; without them the sign-in link is hidden and sessions stay local.

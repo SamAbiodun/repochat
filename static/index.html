@@ -39,6 +39,11 @@
   .wordmark svg circle { fill: var(--ink); }
   header a.src { color:var(--ink-muted); text-decoration:none; font-size:13px; }
   header a.src:hover { color:var(--ink); }
+  header nav { display:flex; align-items:center; gap:18px; font-size:13px; }
+  #account { display:flex; align-items:center; gap:8px; color: var(--ink-muted); }
+  #account a, #account button { font: inherit; color: var(--ink-muted); background:none; border:0; padding:0; cursor:pointer; text-decoration:none; }
+  #account a:hover, #account button:hover { color: var(--ink); }
+  #account img { width:20px; height:20px; border-radius:50%; display:block; }
 
   main { max-width: 820px; margin: 0 auto; padding: 56px 16px 140px; }
   h1 { font: 300 44px/1.08 var(--serif); letter-spacing:-.01em; margin:0 0 10px; color:var(--g-0); }
@@ -106,7 +111,10 @@
     </svg>
     repochat
   </a>
-  <a class="src" href="https://github.com/SamAbiodun/repochat">source</a>
+  <nav>
+    <a class="src" href="https://github.com/SamAbiodun/repochat">source</a>
+    <span id="account"></span>
+  </nav>
 </header>
 <main>
   <h1>Ask the <em>repo.</em></h1>
@@ -130,14 +138,49 @@
 const $ = id => document.getElementById(id);
 let repo = null, history = [], session = null;
 const KEY = 'repochat.sessions';
-const loadSessions = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
-const storeSessions = list => { try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 50))); } catch {} };
+let user = null, remote = [];
+const loadLocal = () => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } };
+const storeLocal = list => { try { localStorage.setItem(KEY, JSON.stringify(list.slice(0, 50))); } catch {} };
+const loadSessions = () => user ? remote : loadLocal();
+const api = (method, path, body) => fetch(path, {method, headers: body ? {'content-type':'application/json'} : {}, body: body && JSON.stringify(body)});
 
-function saveSession() {
+async function saveSession() {
   if (!session || !history.length) return;
   session.messages = history; session.updated = Date.now();
   session.title = session.title || history[0].content.slice(0, 80);
-  storeSessions([session, ...loadSessions().filter(s => s.id !== session.id)]);
+  if (user) {
+    const r = await api('PUT', '/sessions/' + session.id, {repo: session.repo, title: session.title, messages: history});
+    if (r.ok) remote = [await r.json(), ...remote.filter(s => s.id !== session.id)];
+  } else storeLocal([session, ...loadLocal().filter(s => s.id !== session.id)]);
+  renderSessions();
+}
+
+async function removeSession(id) {
+  if (user) { await api('DELETE', '/sessions/' + id); remote = remote.filter(x => x.id !== id); }
+  else storeLocal(loadLocal().filter(x => x.id !== id));
+}
+
+function renderAccount() {
+  const a = $('account'); a.innerHTML = '';
+  if (user) {
+    const img = document.createElement('img'); img.src = user.avatar; img.alt = ''; a.appendChild(img);
+    const b = document.createElement('button'); b.textContent = `${user.login} · sign out`;
+    b.onclick = async () => { await api('POST', '/auth/logout'); user = null; remote = []; session = null; renderAccount(); renderSessions(); };
+    a.appendChild(b);
+  } else {
+    const l = document.createElement('a'); l.href = '/auth/login'; l.textContent = 'sign in with github'; a.appendChild(l);
+  }
+}
+
+async function loadUser() {
+  const me = await (await fetch('/auth/me')).json();
+  user = me.user;
+  if (!me.enabled) { $('account').innerHTML = ''; return; }
+  renderAccount();
+  if (!user) return;
+  for (const s of loadLocal()) await api('PUT', '/sessions/' + s.id, {repo: s.repo, title: s.title, messages: s.messages});
+  storeLocal([]);
+  remote = await (await fetch('/sessions')).json();
   renderSessions();
 }
 
@@ -156,20 +199,21 @@ function renderSessions() {
   const list = loadSessions(); const box = $('sessions'); box.innerHTML = '';
   if (!list.length) return;
   const head = document.createElement('div'); head.className = 'head';
-  head.innerHTML = '<span>sessions · saved in this browser</span>';
+  head.innerHTML = `<span>sessions · ${user ? 'saved to your account' : 'saved in this browser'}</span>`;
   if (session && history.length) { const b = document.createElement('button'); b.textContent = 'new chat'; b.onclick = () => { newSession(repo); $('q').focus(); }; head.appendChild(b); }
   box.appendChild(head);
   for (const s of list) {
     const row = document.createElement('div'); row.className = 'row' + (session && s.id === session.id ? ' on' : '');
     const mk = (cls, text) => { const x = document.createElement('span'); x.className = cls; x.textContent = text; row.appendChild(x); };
     mk('repo', s.repo); mk('title', s.title); mk('when', when(s.updated)); mk('del', '×');
-    row.lastChild.onclick = e => { e.stopPropagation(); storeSessions(loadSessions().filter(x => x.id !== s.id)); if (session && s.id === session.id) session = null; renderSessions(); };
+    row.lastChild.onclick = async e => { e.stopPropagation(); await removeSession(s.id); if (session && s.id === session.id) session = null; renderSessions(); };
     row.onclick = () => openSession(s);
     box.appendChild(row);
   }
 }
 
 async function openSession(s) {
+  if (user && !s.messages) { const r = await fetch('/sessions/' + s.id); if (!r.ok) return; s = await r.json(); }
   session = s; history = s.messages.slice(); repo = s.repo; $('url').value = 'https://github.com/' + s.repo;
   $('chat').innerHTML = '';
   for (const m of history) { const d = el('msg ' + (m.role === 'user' ? 'user' : 'bot')); if (m.role === 'user') d.textContent = m.content; else d.innerHTML = render(m.content); }
@@ -207,6 +251,7 @@ async function poll(keep) {
 }
 
 renderSessions();
+loadUser();
 
 function el(cls, text) { const d = document.createElement('div'); d.className = cls; if (text) d.textContent = text; $('chat').appendChild(d); window.scrollTo(0, document.body.scrollHeight); return d; }
 
