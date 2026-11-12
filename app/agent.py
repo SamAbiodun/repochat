@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from langchain_core.messages import AnyMessage, SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
@@ -10,13 +10,15 @@ from typing_extensions import TypedDict
 from app import search
 from app.llm import chat_model, embeddings
 
+MAX_TOOL_CALLS = 6
+
 SYSTEM = """You are repochat, an assistant that answers questions about one GitHub repository: {repo}.
 Ground every answer in the repository. Use the tools before answering anything about the code.
 Start with search_code. If the results look thin or off-topic, search again with different words,
 or use grep_code for exact identifiers, list_files to orient, and read_file for full context.
 Cite sources as path:line (for example `app/main.py:42`) next to each claim.
 If the repository does not contain the answer, say so plainly instead of guessing.
-Use at most five tool calls, then answer with what you have.
+Use at most six tool calls, then answer with what you have.
 Answer in at most three short sentences, or a short list of at most five items.
 Lead with the answer. Quote at most one small code snippet, only when it is the answer itself.
 No preamble, no summary of what you searched, no closing remarks."""
@@ -71,11 +73,21 @@ def build_tools(repo: str):
 
 def build_graph(repo: str):
     tools = build_tools(repo)
-    model = chat_model().bind_tools(tools)
+    base = chat_model()
+    with_tools = base.bind_tools(tools)
 
     def call_model(state: State):
         messages = [SystemMessage(SYSTEM.format(repo=repo)), *state["messages"]]
-        return {"messages": [model.invoke(messages)]}
+        used = sum(isinstance(m, ToolMessage) for m in state["messages"])
+        if used >= MAX_TOOL_CALLS:
+            messages.append(
+                HumanMessage(
+                    "Tool budget is spent. Answer now from what you found. "
+                    "If it was not there, say so in one sentence."
+                )
+            )
+            return {"messages": [base.invoke(messages)]}
+        return {"messages": [with_tools.invoke(messages)]}
 
     g = StateGraph(State)
     g.add_node("agent", call_model)

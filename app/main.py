@@ -113,7 +113,7 @@ async def chat(body: ChatRequest):
             yield {
                 "event": "token",
                 "data": json.dumps(
-                    "\n\nI searched the repository several times and could not find a grounded answer."
+                    "I searched the repository several times and could not find a grounded answer."
                 ),
             }
         yield {"event": "done", "data": "{}"}

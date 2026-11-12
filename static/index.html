@@ -131,7 +131,7 @@ $('repoForm').onsubmit = async e => {
 async function poll() {
   const j = await (await fetch('/repos/' + repo)).json();
   if (j.status === 'ready') {
-    setStatus(`${repo} · ${j.files || '?'} files · ${j.chunks || '?'} chunks · ready`, 'ok');
+    setStatus(`${repo} · ready${j.chunks ? ` · ${j.files} files · ${j.chunks} chunks` : ''}`, 'ok');
     $('q').disabled = $('askBtn').disabled = false; $('indexBtn').disabled = false; $('q').focus();
     history = []; $('chat').innerHTML = '';
   } else if (j.status === 'failed') {
