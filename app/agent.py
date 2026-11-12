@@ -17,7 +17,9 @@ or use grep_code for exact identifiers, list_files to orient, and read_file for 
 Cite sources as path:line (for example `app/main.py:42`) next to each claim.
 If the repository does not contain the answer, say so plainly instead of guessing.
 Use at most five tool calls, then answer with what you have.
-Keep answers short and concrete."""
+Answer in at most three short sentences, or a short list of at most five items.
+Lead with the answer. Quote at most one small code snippet, only when it is the answer itself.
+No preamble, no summary of what you searched, no closing remarks."""
 
 
 class State(TypedDict):
