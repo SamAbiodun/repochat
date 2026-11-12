@@ -1,3 +1,5 @@
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from app import ingest, main, search
@@ -31,6 +33,7 @@ def test_index_and_status(monkeypatch):
 
 def test_sessions_require_sign_in(monkeypatch):
     monkeypatch.setattr(search, "ensure_indexes", lambda: None)
+    monkeypatch.setattr(main.auth, "settings", lambda: SimpleNamespace(github_client_id=""))
     with TestClient(main.app) as c:
         assert c.get("/auth/me").json()["user"] is None
         assert c.get("/sessions").status_code == 401
